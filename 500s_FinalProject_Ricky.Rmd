@@ -1,0 +1,682 @@
+---
+title: "dat500s_FinalProject_Ricky"
+author: "Ricky Gui"
+date: "11/30/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I. Descriptive Analytics
+0. K-means clustreing
+```{r}
+library(purrr)
+train_data = read.csv(file = "/Users/RickyGui/Desktop/AU20/DAT500S_ Machine Learning/Final Project/Training Data for Ag Project.csv", header = T)
+
+
+test_data = read.csv("/Users/RickyGui/Desktop/AU20/DAT500S_ Machine Learning/Final Project/Evaluation dataset for Ag Project.csv", header = T)
+
+set.seed(1)
+mat = rbind(train_data[,c(5,6)],test_data[,c(3,4)])
+train.kmeans = train_data[,c(5,6)]
+
+# function to compute total within-cluster sum of square 
+wss <- function(k) {
+  kmeans(mat, k, nstart = 10 )$tot.withinss
+}
+
+# Compute and plot wss for k = 1 to k = 15
+k.values <- 2:50
+
+# extract wss for 2-50 clusters
+wss_values = map_dbl(k.values, wss)
+
+plot(k.values, wss_values,
+       type="b", pch = 19, frame = FALSE, 
+       xlab="Number of clusters K",
+       ylab="Total within-clusters sum of squares")
+
+
+km.out=kmeans(mat,20,nstart=10)
+mat$cluster = km.out$cluster
+train_data$cluster = kmeans(train.kmeans, 20, nstart = 10 )$cluster
+mat[which(mat$Latitude==test_data$Latitude),]$cluster
+test_data$cluster = mat[which(mat$Latitude==test_data$Latitude),]$cluster
+```
+0. Data process
+```{r}
+
+MinN = 80
+
+N = 10000
+
+limit = 0.025
+
+keepvars = c("Variety","Variety_Yield","Latitude","Longitude","Median_Prec","Median_Rad","Median_Temp","PH1","Prob_IRR","Probability","Sand1","Silt1","AWC1","Clay1","CE","cluster")
+
+predictors = c("Latitude","Longitude","Median_Prec","Median_Rad","Median_Temp","PH1","Prob_IRR","Probability","Sand1","Silt1","AWC1","Clay1","CE","cluster")
+
+target = c("Variety_Yield")
+
+newdata = train_data[keepvars]
+
+newdata = newdata[complete.cases(newdata),]
+
+newdata[,"Variety"] = factor(newdata[,"Variety"])
+
+VarietyData = split(newdata, newdata$Variety)
+
+SufDataVarieties = c()
+
+insufDataVarieties = c()
+
+for(i in seq(1,length(unique(newdata$Variety)))){
+   if((dim(VarietyData[[i]])[1])>MinN){
+      SufDataVarieties = c(SufDataVarieties, (as.character(VarietyData[[i]][1,"Variety"])))
+   } else {
+      insufDataVarieties = c(insufDataVarieties, (as.character(VarietyData[[i]][1,"Variety"])))
+   }
+}
+
+
+InSufVarietyData = data.frame()
+
+
+for (i in 1:length(insufDataVarieties)) {
+  InSufVarietyData = rbind(InSufVarietyData, newdata[which(newdata$Variety == insufDataVarieties[i]),])
+}
+
+SufVarietyData = data.frame()
+
+for (i in 1:length(SufDataVarieties)) {
+  SufVarietyData = rbind(SufVarietyData, newdata[which(newdata$Variety == SufDataVarieties[i]),])
+}
+
+SplitData = split(SufVarietyData, SufVarietyData$Variety)
+
+
+```
+
+1. map a
+```{r}
+
+library(maps)
+mp_us = map("state", fill = TRUE, col = 8)
+points(train_data$Longitude,train_data$Latitude,pch = 20, col = "red" ) + points(test_data$Longitude,test_data$Latitude,pch = 20, col = "yellow")
+
+```
+1. map b
+
+```{r}
+library(ggmap)
+
+locations = train_data[,c(2,5,6)]
+#locations = aggregate(.~Location, locations,mean)
+qmplot(Longitude,Latitude, data = locations,
+       color = I("red"), size = I(0.5), alpha = I(0.7))+ geom_point(data = test_data, aes(x = Longitude, y = Latitude), colour = "yellow",size = 2.5) 
+```
+
+From the graph we noticed that larger Location ID number means the farm location is more to the south
+2. frequency distribution for all varieties
+```{r}
+ggplot(data = train_data, aes(y = Variety)) + geom_histogram(stat = "count") +
+  theme(axis.text.y = element_text(size = 3.5, vjust = 0.5, hjust = 0.1, angle = 0))
+```
+2.1 Frequency of sufficient variety
+```{r}
+ggplot(data = SufVarietyData, aes(y = Variety)) + geom_histogram(stat = "count") +
+  theme(axis.text.y = element_text(size = 6, vjust = 0.5, hjust = 0.1, angle = 0)) 
+
+```
+
+3. relationship between the locations and varieties
+```{r}
+
+install.packages("scatterplot3d") # Install
+
+library("scatterplot3d") # load
+library(dplyr)
+scatterplot3d(x = train_data$Location, y=train_data$Variety, z=df_loc_var$Freq)
+m = as.data.frame(train_data$Variety)
+
+loc_var = data.frame(train_data["Variety"],train_data["Location"])
+attach(train_data)
+
+varvar = data.frame(train_data$Variety,train_data$Longitude,train_data$Latitude)
+barplot(varvar)
+
+df_loc_var = as.data.frame(table(train_data$Variety))
+
+df_loc_var$Freq
+
+df_loc_var %>% group_by(df_loc_var$Var2) %>% arrange(df_loc_var,desc(df_loc_var$Freq))
+
+plot(arrange(df_loc_var,desc(df_loc_var$Freq)))
+install.packages("sqldf")
+library(sqldf)
+sql_var = sqldf("select Location, Variety, count(Variety) as total from train_data group by Location,Variety")
+install.packages("rgl")
+library(rgl)
+plot3d(sql_var)
+
+```
+
+4. patterns in weather variables
+```{r}
+par(mfrow = c(2,4))
+
+loc_prec = data.frame(train_data["Location"],train_data$Median_Prec)
+plot(loc_prec)
+
+loc_rad = data.frame(train_data["Location"],train_data$Median_Rad)
+plot(loc_rad)
+
+loc_rad = data.frame(train_data["Location"],train_data$Median_Temp)
+plot(loc_rad)
+
+loc_wea1 = data.frame(train_data["Location"],train_data$Weather1)
+plot(loc_wea1)
+
+loc_wea2 = data.frame(train_data["Location"],train_data$Weather2)
+plot(loc_wea2)
+
+loc_wea2 = data.frame(train_data["Location"],train_data$Latitude)
+plot(loc_wea2)
+
+loc_wea2 = data.frame(train_data["Location"],train_data$Longitude)
+plot(loc_wea2)
+
+par(mfrow = c(1,1))
+```
+More southern places usually have higher median probability of precipitation, higher median amount of solar radiation and higher median temperature. 
+
+5. distribution of the yield variables
+```{r}
+library(ggplot2)
+# var_yie = data.frame(train_data["Variety"],train_data["Variety_Yield"])
+# var_yie_mean = aggregate(var_yie[,2],list(var_yie$Variety),mean)
+# ggplot(data = var_yie_mean,aes(x = Group.1, y = x))+ geom_point() + coord_flip()
+# ggplot(data = train_data, aes(x = Variety_Yield)) + geom_histogram(stat = "count") +
+#   theme(axis.text.y = element_text(size = 6, vjust = 0.5, hjust = 0.1, angle = 0))
+hist(train_data$Variety_Yield)
+```
+
+
+
+II.	Predictive Analytics
+
+0. K-means clustreing
+```{r}
+library(purrr)
+set.seed(1)
+mat = rbind(train_data[,c(5,6)],test_data[,c(3,4)])
+train.kmeans = train_data[,c(5,6)]
+
+# function to compute total within-cluster sum of square 
+wss <- function(k) {
+  kmeans(mat, k, nstart = 10 )$tot.withinss
+}
+
+# Compute and plot wss for k = 1 to k = 15
+k.values <- 2:50
+
+# extract wss for 2-50 clusters
+wss_values = map_dbl(k.values, wss)
+
+plot(k.values, wss_values,
+       type="b", pch = 19, frame = FALSE, 
+       xlab="Number of clusters K",
+       ylab="Total within-clusters sum of squares")
+
+
+km.out=kmeans(mat,20,nstart=10)
+mat$cluster = km.out$cluster
+train_data$cluster = kmeans(train.kmeans, 20, nstart = 10 )$cluster
+mat[which(mat$Latitude==test_data$Latitude),]$cluster
+test_data$cluster = mat[which(mat$Latitude==test_data$Latitude),]$cluster
+```
+
+1. Analysis
+```{r}
+library(MASS)
+
+attach(train_data)
+
+library(glmnet)
+
+library(tree)
+
+library(randomForest)
+
+library(gbm)
+
+library(neuralnet)
+
+library(nnet)
+
+library(caret)
+
+library(magrittr)
+
+library(dplyr)
+
+set.seed(1)
+
+train = sample(1:nrow(train_data),nrow(train_data)*0.8)
+
+train_set = train_data[train,] # set the training set, which is near half amount of the data set
+
+test_set = train_data[-train,"Variety_Yield"] # set the test set
+
+Variety_Name = c()
+
+Yield = c()
+
+soybean = c()
+
+for (i in 1:length(SufDataVarieties)) {
+  mse_list = c()
+  
+  pred_list = c()
+  
+  dat = data.frame()
+  
+  dat = rbind(dat, SufVarietyData[which(SufVarietyData$Variety == SufDataVarieties[i]),])
+  
+  dat = dat[,-1]
+  
+  set.seed(1)
+  
+  train = sample(1:nrow(dat),nrow(dat)*0.8)
+  
+  test_set = dat[-train,"Variety_Yield"]
+  #######linear
+  set.seed(1)
+  
+  lm.fit = lm(Variety_Yield~.,data = dat,subset = train) # build linear model
+  
+  l.pred = predict(lm.fit, newdata = dat[-train,])
+  
+  mse_temp = mean((l.pred - test_set)^2)
+  
+  mse_list = c(mse_list,mse_temp)
+  
+  pred_list = c(pred_list,predict(lm.fit, test_data))
+  
+  #######LASSO
+
+  set.seed(1)
+
+  model_x = model.matrix(Variety_Yield~.,data = dat)[,-1]
+
+  model_y = dat$Variety_Yield
+
+  lasso.mod = glmnet(model_x[train,],model_y[train],alpha = 1) # build lasso model
+
+  cv.out = cv.glmnet(model_x[train,],model_y[train],alpha = 1)
+
+  bestlam = cv.out$lambda.min
+  
+  lasso.pred=predict(lasso.mod,s=bestlam,model_x[-train,]) # predict on test data
+
+  mse_temp = mean((lasso.pred-model_y[-train])^2)
+
+  mse_list = c(mse_list,mse_temp)
+
+  pred_list = c(pred_list,predict(lasso.mod,s=bestlam,newx=as.matrix(test_data[,c(3,4,24,32,16,35,7,5,39,38,36,37,45,46)])))
+  
+  
+
+  ########Regression tree
+  set.seed(1)
+  
+  tree.mod = tree(Variety_Yield~.,data = dat,subset=train) # build tree model with trainning set
+
+  tree_pred = predict(tree.mod,newdata=dat[-train,]) # predict based on the test data
+
+
+  mse_temp = mean((tree_pred-test_set)^2) # calculate the test MSE 
+  
+  mse_list = c(mse_list,mse_temp)
+  
+  pred_list = c(pred_list,predict(tree.mod, test_data))
+  
+  ########Bagging
+  set.seed(1)
+  
+  bag.mod = randomForest(Variety_Yield~.,data = dat,subset=train, mtry=14, importance=TRUE)
+
+  pred.bag = predict(bag.mod, newdata = dat[-train,])
+
+  mse_temp = mean((pred.bag-test_set)^2)
+  
+  mse_list = c(mse_list,mse_temp)
+  
+  pred_list = c(pred_list,predict(bag.mod, test_data))
+  
+  #########Random Forest
+  set.seed(1)
+  
+  rf.mod = randomForest(Variety_Yield~.,data = dat,subset=train,mtry=7,importance = TRUE)
+
+  rf.pred = predict(rf.mod,newdata = dat[-train,])
+
+  mse_temp = mean((rf.pred-test_set)^2)
+
+  mse_list = c(mse_list,mse_temp)
+  
+  pred_list = c(pred_list,predict(rf.mod, test_data))
+  #########Boosted Trees
+  boost.mod = gbm(Variety_Yield~.,data = dat[train,],distribution = "gaussian",
+                  n.trees=7000,interaction.depth=4,shrinkage = 0.1)  # build boosted tree model using training set
+
+  boost.pred = predict(boost.mod,newdata=dat[-train,],n.trees=7000) # predict with the test set
+
+  mse_temp = mean((boost.pred-test_set)^2) # calculate the test MSE
+  
+  mse_list = c(mse_list,mse_temp)
+  
+  pred_list = c(pred_list,predict(boost.mod, test_data, n.trees = 7000))
+  ##########Neural Network
+  set.seed(1)
+  
+  max_yield = max(dat['Variety_Yield'])
+  
+  min_yield = min(dat['Variety_Yield'])
+  
+  norm.values = preProcess(dat,method = 'range')
+  
+  nnn.data = predict(norm.values,dat)
+  
+  nn.mod = neuralnet(Variety_Yield~.,data = nnn.data[train,], linear.output = F, hidden = 9)
+  
+  target = neuralnet::compute(nn.mod, dat[-train,])
+  
+  nn.pred = target$net.result*(max_yield - min_yield)+min_yield
+
+  mse_temp = mean((nn.pred - test_set)^2)
+  
+  mse_list = c(mse_list,mse_temp)
+  
+  pred_list = c(pred_list,predict(nn.mod, test_data))
+  
+  #############
+  model_list = c(lm.fit,lasso.mod,tree.mod,bag.mod,rf.mod,boost.mod,nn.mod)
+  #soybean = c(soybean,SufDataVarieties[i],pred_list[which.min(mse_list)])
+  Variety_Name = c(Variety_Name,SufDataVarieties[i])
+  Yield = c(Yield,pred_list[which.min(mse_list)])
+  
+}
+
+soybean = data.frame(Variety_Name,Yield)
+
+sorted = order(soybean[,"Yield"],decreasing = T)
+
+soybean[sorted,]
+
+```
+
+Insufficient Data Set
+```{r}
+Variety_Name_ins = c()
+
+Yield_ins = c()
+
+soybean_ins = c()
+
+
+mse_list = c()
+
+pred_list = c()
+
+dat = InSufVarietyData
+
+dat = dat[,-1]
+
+set.seed(1)
+
+train = sample(1:nrow(dat),nrow(dat)*0.8)
+
+test_set = dat[-train,"Variety_Yield"]
+#######linear
+set.seed(1)
+
+lm.fit = lm(Variety_Yield~.,data = dat,subset = train) # build linear model
+
+l.pred = predict(lm.fit, newdata = dat[-train,])
+
+mse_temp = mean((l.pred - test_set)^2)
+
+mse_list = c(mse_list,mse_temp)
+
+pred_list = c(pred_list,predict(lm.fit, test_data))
+
+#######LASSO
+set.seed(1)
+
+model_x = model.matrix(Variety_Yield~.,data = dat)[,-1]
+
+model_y = dat$Variety_Yield
+
+lasso.mod = glmnet(model_x[train,],model_y[train],alpha = 1) # build lasso model
+
+cv.out = cv.glmnet(model_x[train,],model_y[train],alpha = 1)
+
+bestlam = cv.out$lambda.min
+
+lasso.pred=predict(lasso.mod,s=bestlam,model_x[-train,]) # predict on test data
+
+mse_temp = mean((lasso.pred-model_y[-train])^2)
+
+mse_list = c(mse_list,mse_temp)
+
+pred_list = c(pred_list,predict(lasso.mod,s=bestlam,newx=as.matrix(test_data[,c(3,4,24,32,16,35,7,5,39,38,36,37,45,46)])))
+
+########Regression tree
+set.seed(1)
+
+tree.mod = tree(Variety_Yield~.,data = dat,subset=train) # build tree model with trainning set
+
+tree_pred = predict(tree.mod,newdata=dat[-train,]) # predict based on the test data
+
+
+mse_temp = mean((tree_pred-test_set)^2) # calculate the test MSE 
+
+mse_list = c(mse_list,mse_temp)
+
+pred_list = c(pred_list,predict(tree.mod, test_data))
+########Bagging
+set.seed(1)
+
+bag.mod = randomForest(Variety_Yield~.,data = dat,subset=train, mtry=14, importance=TRUE)
+
+pred.bag = predict(bag.mod, newdata = dat[-train,])
+
+mse_temp = mean((pred.bag-test_set)^2)
+
+mse_list = c(mse_list,mse_temp)
+
+pred_list = c(pred_list,predict(bag.mod, test_data))
+
+#########Random Forest
+set.seed(1)
+
+rf.mod = randomForest(Variety_Yield~.,data = dat,subset=train,mtry=7,importance = TRUE)
+
+rf.pred = predict(rf.mod,newdata = dat[-train,])
+
+mse_temp = mean((rf.pred-test_set)^2)
+
+mse_list = c(mse_list,mse_temp)
+
+pred_list = c(pred_list,predict(rf.mod, test_data))
+#########Boosted Trees
+set.seed(1)
+
+boost.mod = gbm(Variety_Yield~.,data = dat[train,],distribution = "gaussian",
+                n.trees=7000,interaction.depth=4,shrinkage = 0.1)  # build boosted tree model using training set
+
+boost.pred = predict(boost.mod,newdata=dat[-train,],n.trees=7000) # predict with the test set
+
+mse_temp = mean((boost.pred-test_set)^2) # calculate the test MSE
+
+mse_list = c(mse_list,mse_temp)
+
+pred_list = c(pred_list,predict(boost.mod, test_data, n.trees = 7000))
+##########Neural Network
+
+set.seed(1)
+
+max_yield = max(dat['Variety_Yield'])
+
+min_yield = min(dat['Variety_Yield'])
+
+norm.values = preProcess(dat,method = 'range')
+
+nnn.data = predict(norm.values,dat)
+
+nn.mod = neuralnet(Variety_Yield~.,data = nnn.data[train,], linear.output = F, hidden = 9)
+
+target = neuralnet::compute(nn.mod, dat[-train,])
+
+nn.pred = target$net.result*(max_yield - min_yield)+min_yield
+
+mse_temp = mean((nn.pred - test_set)^2)
+
+mse_list = c(mse_list,mse_temp)
+
+pred_list = c(pred_list,predict(nn.mod, test_data))
+
+#############
+
+best_yield_ins =pred_list[which.min(mse_list)]
+
+abc = rep(best_yield_ins,length(insufDataVarieties))
+
+ins_data_frame = data.frame(insufDataVarieties,abc)
+
+ins_data_frame
+
+
+
+
+```
+2. LASSO
+```{r}
+library(glmnet)
+
+set.seed(1)
+
+model_x = model.matrix(Variety_Yield~Location+Median_Prec+Median_Rad+Median_Temp+PH1+Prob_IRR+Probability+Sand1+Silt1+AWC1+Clay1+CE,train_data)[,-1]
+
+model_y = train_data$Variety_Yield
+
+lasso.mod = glmnet(model_x[train,],model_y[train],alpha = 1) # build lasso model
+
+cv.out = cv.glmnet(model_x[train,],model_y[train], alpha=1)
+
+bestlam = cv.out$lambda.min
+
+lasso.pred=predict(lasso.mod,s=bestlam,newx=model_x[-train,]) # predict on test data
+
+LASSO_MSE = mean((lasso.pred-model_y[-train])^2) # test MSE for LASSO model 
+
+predict(lasso.mod,s=bestlam,newx=as.matrix(test_data[,c(1,24,32,16,35,7,5,39,38,36,37,45)]))
+
+print(LASSO_MSE)
+
+
+
+```
+
+3. Regression Tree
+```{r}
+library(tree)
+set.seed(1)
+
+tree.mod = tree(Variety_Yield~Location+Median_Prec+Median_Rad+Median_Temp+PH1+Prob_IRR+Probability+Sand1+Silt1+AWC1+Clay1+CE,data = train_data,subset=train) # build tree model with trainning set
+
+plot(tree.mod) 
+text(tree.mod,pretty=0) # tree model graph
+
+tree_pred = predict(tree.mod,newdata=train_data[-train,]) # predict based on the test data
+
+
+tree_MSE = mean((tree_pred-test_set)^2) # calculate the test MSE 
+
+predict(tree.mod,newdata=test_data)
+
+print(tree_MSE)
+
+```
+
+4. Bagging
+```{r}
+library(randomForest)
+set.seed(1)
+
+bag.mod = randomForest(Variety_Yield~Location+Median_Prec+Median_Rad+Median_Temp+PH1+Prob_IRR+Probability+Sand1+Silt1+AWC1+Clay1+CE,data = train_data,subset=train, mtry=12, importance=TRUE)
+
+pred.bag = predict(bag.mod, newdata = train_data[-train,])
+
+
+bag_MSE = mean((pred.bag-test_set)^2)
+
+print(bag_MSE)
+```
+
+5. Random Forest
+```{r}
+set.seed(1)
+
+rf.mod = randomForest(Variety_Yield~Location+Median_Prec+Median_Rad+Median_Temp+PH1+Prob_IRR+Probability+Sand1+Silt1+AWC1+Clay1+CE,data = train_data,subset=train,mtry=6,importance = TRUE)
+
+rf.pred = predict(rf.mod,newdata = train_data[-train,])
+
+rf_MSE = mean((rf.pred-test_set)^2)
+
+print(rf_MSE)
+```
+
+6. Boosted Trees
+```{r}
+library(gbm)
+set.seed(1)
+
+boost.mod = gbm(Variety_Yield~Location+Median_Prec+Median_Rad+Median_Temp+PH1+Prob_IRR+Probability+Sand1+Silt1+AWC1+Clay1+CE,data = train_data[train,],distribution = "gaussian", n.trees=5000,interaction.depth=4) 
+# build boosted tree model using training set
+
+boost.pred = predict(boost.mod,newdata=train_data[-train,],n.trees=5000) # predict with the test set
+
+boost_MSE = mean((boost.pred-test_set)^2) # calculate the test MSE
+
+print(boost_MSE)
+```
+
+7.	Neural Network  
+```{r}
+library(neuralnet)
+set.seed(1)
+
+nn.mod = neuralnet(Variety_Yield~Location+Median_Prec+Median_Rad+Median_Temp+PH1+Prob_IRR+Probability+Sand1+Silt1+AWC1+Clay1+CE,data = train_data[train,], linear.output = F, hidden = 5)
+
+nn.pred = predict(nn.mod,train_data[-train,])
+
+nn_MSE = mean((nn.pred - test_set)^2)
+
+print(nn_MSE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
